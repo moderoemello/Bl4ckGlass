@@ -1,5 +1,6 @@
 
-![bl4ckglass](https://github.com/user-attachments/assets/b5ff6c05-0ece-458d-a333-94d901b0f3aa)
+![bl4ckglass-removebg-preview](https://github.com/user-attachments/assets/4e50f0ed-4a94-4e3f-bc14-6366b9e92464)
+
 
 # 🧠 BL4CKGLASS — Vision-Based OS-Level Automation Agent System
 
