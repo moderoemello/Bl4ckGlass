@@ -2,7 +2,7 @@
 ![bl4ckglass-removebg-preview](https://github.com/user-attachments/assets/4e50f0ed-4a94-4e3f-bc14-6366b9e92464)
 
 
-# 🧠 BL4CKGLASS — Vision-Based OS-Level Automation Agent System
+# Vision-Based OS-Level Automation Agent System
 
 **Bl4ckGlass** is a modular AI-driven automation system designed to control any user interface—web or desktop—through pure visual input and simulated human behavior. It enables seamless automation of business workflows without relying on APIs, browser drivers, or internal integrations.
 
