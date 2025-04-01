@@ -1,0 +1,4 @@
+[+] Chrome launched
+[+] Screen captured
+[-] ERROR: Could not load image or template.
+[-] Easy Apply not found
