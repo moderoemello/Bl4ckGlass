@@ -8,7 +8,7 @@
 
 ---
 
-## 🔮 End Goal
+## End Goal
 
 The final vision for **Bl4ckGlass** is a **local, AI-enhanced automation framework** that overlays on top of your OS like a second set of eyes and hands:
 
@@ -30,7 +30,7 @@ The final vision for **Bl4ckGlass** is a **local, AI-enhanced automation framewo
 
 ---
 
-## 🧱 Architecture Overview
+##  Architecture Overview
 
 - **Orchestrator Agent** – Manages workflow sequences (e.g., login → search → apply).
 - **Vision Agent** – Uses OCR + image recognition to detect fields and buttons.
