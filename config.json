@@ -1,0 +1,11 @@
+{
+    "chrome_profile": "Profile 1",
+    "resume_path": "/home/YOUR_USER/Documents/resume.pdf",
+    "job_keywords": "Software Engineer",
+    "job_location": "Remote",
+    "login": {
+      "email": "you@example.com",
+      "password": "yourpassword"
+    }
+  }
+  

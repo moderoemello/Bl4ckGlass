@@ -13,3 +13,5 @@ PyScreeze==1.0.1
 pytesseract==0.3.13
 python3-xlib==0.15
 pytweening==1.2.0
+openai==1.13.3
+python-dotenv==1.0.1
