@@ -2,6 +2,7 @@ import os
 import time
 import random
 import logging
+import json
 import subprocess
 import pytesseract
 from pytesseract import Output
@@ -11,6 +12,8 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat import ChatCompletion
 import base64
+import layoutparser as lp
+from screeninfo import get_monitors
 from io import BytesIO
 import mss
 import numpy as np
@@ -364,21 +367,28 @@ def refine_coordinates(approx_x: int, approx_y: int, window_title: Optional[str]
 
 
 
-
-
-
 class VisionAgent:
     def __init__(self, orchestrator, api_key):
         self.orchestrator = orchestrator
         self.llm_agent = LLMIntegrationAgent(api_key)
+        self.layout_model = lp.Detectron2LayoutModel(
+            config_path="lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config",
+            extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.5],
+            label_map={0: "Text", 1: "Title", 2: "List", 3: "Table", 4: "Figure"},
+            enforce_cpu=True
+        )
+        self.primary_monitor = get_monitors()[0]
+        self.screen_width = self.primary_monitor.width
+        self.screen_height = self.primary_monitor.height
 
     def capture_screen(self, region=None):
-        """Capture screenshot using mss."""
         with mss.mss() as sct:
-            if region:
-                monitor = {"left": region[0], "top": region[1], "width": region[2], "height": region[3]}
-            else:
-                monitor = sct.monitors[0]
+            monitor = {
+                "left": region[0] if region else 0,
+                "top": region[1] if region else 0,
+                "width": region[2] if region else self.screen_width,
+                "height": region[3] if region else self.screen_height
+            }
             sct_img = sct.grab(monitor)
             img = Image.frombytes("RGB", (sct_img.width, sct_img.height), sct_img.rgb)
             return img, sct_img.width, sct_img.height
@@ -399,24 +409,42 @@ class VisionAgent:
                 return (x + w // 2, y + h // 2)
         return None
 
+    def find_text_with_layoutparser(self, label="Title"):
+        image, _, _ = self.capture_screen()
+        image_np = np.array(image)
+        layout = self.layout_model.detect(image_np)
+        results = []
+        for block in layout:
+            if block.type == label:
+                x, y = int(block.block.x_1 + (block.block.width / 2)), int(block.block.y_1 + (block.block.height / 2))
+                results.append((label, (x, y)))
+        return results
+
+    def match_template(self, template_path, threshold=0.8):
+        screen_img, _, _ = self.capture_screen()
+        screen_np = np.array(screen_img.convert("RGB"))
+        template = cv2.imread(template_path, cv2.IMREAD_COLOR)
+        res = cv2.matchTemplate(screen_np, template, cv2.TM_CCOEFF_NORMED)
+        loc = np.where(res >= threshold)
+        matches = []
+        for pt in zip(*loc[::-1]):
+            x = int(pt[0] + template.shape[1] / 2)
+            y = int(pt[1] + template.shape[0] / 2)
+            matches.append(("TemplateMatch", (x, y)))
+        return matches
+
     def analyze_screenshot_with_gpt(self, prompt):
         image, screen_w, screen_h = self.capture_screen()
         gpt_result = self.llm_agent.analyze_image_with_gpt(image, prompt)
         return gpt_result, screen_w, screen_h
 
     def get_click_coordinates_from_all_methods(self, prompt):
-        import json
-        import cv2
-        import numpy as np
-        from PIL import ImageDraw
-
-        # Capture screenshot
         img_pil, screen_w, screen_h = self.capture_screen()
         img_np = np.array(img_pil)
 
-        # Ask GPT-4 for job coordinates
-        result_text = self.llm_agent.analyze_image_with_gpt(img_pil, prompt)
+        # GPT Vision-based
         try:
+            result_text = self.llm_agent.analyze_image_with_gpt(img_pil, prompt)
             gpt_points = json.loads(result_text)
         except Exception as e:
             logging.error("GPT output JSON error: %s", e)
@@ -427,28 +455,40 @@ class VisionAgent:
         scale_y = screen_h / img_h
 
         final_coords = []
-        for item in gpt_points:
-            if "title" in item and "x" in item and "y" in item:
-                raw_x = item["x"]
-                raw_y = item["y"]
-                corrected_x = int(raw_x * scale_x)
-                corrected_y = int(raw_y * scale_y)
-                logging.debug(f"Title: {item['title']} | Raw: ({raw_x},{raw_y}) → Scaled: ({corrected_x},{corrected_y})")
-                final_coords.append((item["title"], (corrected_x, corrected_y)))
 
-        # Optional debug overlay
+        for item in gpt_points:
+            if all(k in item for k in ("title", "x", "y")):
+                corrected_x = int(item["x"] * scale_x)
+                corrected_y = int(item["y"] * scale_y)
+                final_coords.append((item["title"], (corrected_x, corrected_y)))
+                logging.debug(f"[GPT] {item['title']}: {corrected_x}, {corrected_y}")
+
+        # Add OCR fallback
+        ocr_coord = self.find_text_position(prompt)
+        if ocr_coord:
+            final_coords.append(("OCR_Fallback", ocr_coord))
+            logging.debug(f"[OCR] Found '{prompt}' at {ocr_coord}")
+
+        # Add LayoutParser fallback
+        layout_coords = self.find_text_with_layoutparser()
+        final_coords.extend(layout_coords)
+
+        # Template matching fallback
+        template_matches = self.match_template(f"templates/{prompt}.png")
+        final_coords.extend(template_matches)
+
+        # Draw debug overlay
         try:
             draw = ImageDraw.Draw(img_pil)
-            for title, (x, y) in final_coords:
+            for label, (x, y) in final_coords:
                 draw.rectangle([(x - 10, y - 10), (x + 10, y + 10)], outline="red", width=2)
-                draw.text((x + 12, y), title, fill="white")
+                draw.text((x + 12, y), label, fill="white")
             img_pil.save("debug_overlay.png")
             logging.info("Saved debug image with overlay to debug_overlay.png")
         except Exception as e:
             logging.warning("Could not create overlay debug image: %s", e)
 
         return final_coords
-
 
 
 
